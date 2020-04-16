@@ -111,4 +111,31 @@ def parse_cdev_sub_cell(sub_cell):
 
     return parameter_dict, pin_dict
 
+def parse_pgarc():
+    '''
+    Summary: splits up and extracts information (pin names) for each pgarc cell
+    Returns: dictionary of all cells in format <cell name> : [<pin name>]
+    '''
+    # First, split up pgarc file into a list of text segments for each individual cell
+    with open(args.pgarc_filename,'r') as f:
+        data = f.read()
+        cells = data.split('cell ')
+        cells.pop(0) # First cell in split is empty, just delete it
+
+    # Parse cell name and pins from each cell and add it to the result cell dictionary
+    cell_dict = {} # Result dictionary
+    for cell in cells:
+        # Split up cell into *just* an array of the important words: cell name and pins
+        cell = cell.replace('{',' ')
+        cell = cell.replace('}',' ')
+        cell = cell.replace('\n',' ')
+        cell_words = [word for word in cell.split(' ') if (word != '' and word != 'pgarc')]
+
+        # Extract cell name and pin list from cell words and push it all to the result dictionary
+        cell_name = cell_words[0]
+        cell_pins = cell_words[1:]
+        cell_dict[cell_name] = cell_pins
+
+    return cell_dict
+
 print(parse_cdev())
