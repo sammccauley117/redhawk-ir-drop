@@ -10,6 +10,18 @@ parser.add_argument('spiprof_filename')
 parser.add_argument('pgarc_filename')
 args = parser.parse_args()
 
+# Establish what the units for each cdev variable should be
+CDEV_UNITS = {
+    'voltage': 'V',
+    'esc': 'F',
+    'esr': 'ohm',
+    'leak': 'A',
+    'Temperature': 'C'
+}
+
+def error(message):
+    print('ERROR:', message)
+
 def parse_cdev():
     '''
     Summary: splits up and extracts information for each cdev cell
@@ -55,7 +67,7 @@ def parse_cdev_cell(cell):
     # Parse individual sub cells and add each sub cell info to our result dictionary
     sub_cell_dict = {} # Result dictionary
     for sub_cell in sub_cells:
-        parameter_data, pin_data = parse_cdev_sub_cell(sub_cell)
+        parameter_data, pin_data = parse_cdev_sub_cell(sub_cell, cell_name)
         parameter_data_hash = str(parameter_data)
         sub_cell_dict[parameter_data_hash] = parameter_data
         # Add the pin data
@@ -64,10 +76,12 @@ def parse_cdev_cell(cell):
 
     return cell_name, sub_cell_dict
 
-def parse_cdev_sub_cell(sub_cell):
+def parse_cdev_sub_cell(sub_cell, cell_name):
     '''
     Summary: parses information out of an cdev sub cell
-    Input: string of cdev sub cell text
+    Input:
+        sub_cell: string of cdev sub cell text
+        cell_name: string name of the cell being parsed, used for error messages
     Returns:
         1) Dictionary of sub cell's parameter information (used as sub cells hash key)
         2) Dictionary of sub cell's pin information
@@ -84,15 +98,14 @@ def parse_cdev_sub_cell(sub_cell):
     # Get initial pin data: everything BUT voltage, we'll get that later
     pin_dict = {}
     for line in pin_lines:
-        segments = line.split(',') # Data segments
-        pin_name = segments[0].split(' ')[-1] # Pin name is the last word of the first data segment
+        parameters = line.split(',') # Pin parameters are each seperated by commas
+        pin_name = parameters[0].split(' ')[-1] # Pin name is the last word of the first data segment
         # Make a new pin entry if its not already in our pins dictionary
         if pin_name not in pin_dict:
             pin_dict[pin_name] = {}
         # Parse and add the actual data, ex: esc, esr, leakage...
-        for segment in segments[1:]:
-            variable = segment.split('=')[0].strip()
-            value = segment.split('=')[1].strip()
+        for parameter in parameters[1:]:
+            variable, value = parse_cdev_parameter(parameter, cell_name)
             pin_dict[pin_name][variable] = value
 
     # Get parameter data
@@ -102,14 +115,56 @@ def parse_cdev_sub_cell(sub_cell):
         # Extract info for each parameter
         for parameter in parameters:
             if '=' in parameter:
-                variable = parameter.split('=')[0].strip()
-                value = parameter.split('=')[1].strip()
+                variable, value = parse_cdev_parameter(parameter, cell_name, pin_dict)
                 parameter_dict[variable] = value
                 # Check to see if it's a pin voltage parameter: add it to the pin info too
                 if variable in pin_dict:
                     pin_dict[variable]['voltage'] = value
 
     return parameter_dict, pin_dict
+
+def parse_cdev_parameter(parameter_string, cell_name, pin_dict={}):
+    '''
+    Summary: parses a single parameter string in the form "<variable> = <value>",
+        converts to float if possible, and verifies units
+    Inputs:
+        parameter_string: string in the form "<variable> = <value>"
+        cell_name: string name of the cell being parsed, used for error messages
+        pin_dict: optional dictionary containing the pin names for the scenario that a pin
+            name is the variable and the unit needs to be verified that it is in V
+    Returns:
+        variable: string variable name
+        value: value of the variable, either a string or a float
+    '''
+    variable = parameter_string.split('=')[0].strip()
+    data = parameter_string.split('=')[1].strip().split(' ')
+    has_unit = True if len(data) == 2 else False
+
+    # If there is a unit, data[0] is assumed to be the float value and data[1] the unit
+    # Check to make sure it is a valid unit
+    if has_unit:
+        try:
+            # Try casting the variable data as a float if possible and verify the unit
+            value = float(data[0])
+            unit = data[1]
+            if variable in CDEV_UNITS:
+                if unit != CDEV_UNITS[variable]:
+                    message = "Unknown unit '{}' for variable '{}' in cdev cell: {}".format(unit, variable, cell_name)
+                    error(message)
+            else:
+                # Variable could be a pin, if not then it's unknown
+                if variable not in pin_dict:
+                    message = "Unknown variable '{}' for cdev cell: {}".format(variable, cell_name)
+                    error(message)
+            return variable, value
+        except:
+            # data[0] does not appear to be a float, this must be some variable we
+            # haven't seen before, rejoin the variable data and return it as a string
+            return variable, ' '.join(data)
+
+    # There does not appear to be a unit, treat the value as a string
+    value = parameter_string.split('=')[1].strip()
+    return variable, value
 
 def parse_pgarc():
     '''
