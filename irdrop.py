@@ -19,8 +19,25 @@ CDEV_UNITS = {
     'Temperature': 'C'
 }
 
+################################################################################
+# Error checking
+################################################################################
 def error(message):
     print('ERROR:', message)
+
+def compare_pin_names(cdev_cells, pgarc_cells):
+    for cell_name, pins in pgarc_cells.items():
+        if cell_name in cdev_cells:
+            for cdev_sub_cell, cdev_sub_cell_data in cdev_cells[cell_name].items():
+                cdev_pins = cdev_cells[cell_name][cdev_sub_cell]['pins'].keys()
+                for pin in pins:
+                    if pin not in cdev_pins:
+                        message = 'pin "{}" in pgarc but not in cdev for cell: "{}" and sub cell: "{}"'.format(pin, cell_name, cdev_sub_cell)
+                        error(message)
+
+################################################################################
+# .cdev Parsing
+################################################################################
 
 def parse_cdev():
     '''
@@ -30,8 +47,11 @@ def parse_cdev():
     # First, split up cdev file into a list of text segments for each individual cell
     with open(args.cdev_filename,'r') as f:
         data = f.read()
-        cells = data.split('Info: cell=')
-        cells.pop(0) # First element of the split is just the header info, delete it
+    cells = data.split('Info: cell=')
+    cells.pop(0) # First element of the split is just the header info, delete it
+
+    # Last cell also contains the final printed info line for the file, remove it
+    cells[-1] = '\n'.join(cells[-1].splitlines()[:-1])
 
     # Parse info from each cell and add it to the result cell dictionary
     cell_dict = {} # Result dictionary
@@ -166,6 +186,10 @@ def parse_cdev_parameter(parameter_string, cell_name, pin_dict={}):
     value = parameter_string.split('=')[1].strip()
     return variable, value
 
+################################################################################
+# .pgarc Parsing
+################################################################################
+
 def parse_pgarc():
     '''
     Summary: splits up and extracts information (pin names) for each pgarc cell
@@ -193,4 +217,6 @@ def parse_pgarc():
 
     return cell_dict
 
-print(parse_cdev())
+cdev_cells = parse_cdev()
+pgarc_cells = parse_pgarc()
+compare_pin_names(cdev_cells,  pgarc_cells)
