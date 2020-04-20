@@ -217,6 +217,150 @@ def parse_pgarc():
 
     return cell_dict
 
+################################################################################
+# .spiprof Parsing
+################################################################################
+
+def parse_spiprof():
+    '''
+    Summary: splits up and extracts information for each spiprof cell
+    Returns: dictionary of all cells in format <cell name> : [<pin name>]
+    '''
+    # First, split up pgarc file into a list of text segments for each individual cell
+    with open(args.spiprof_filename,'r') as f:
+        data = f.read()
+        spiprof_cells = data.split('cell: ')
+        del data
+        spiprof_cells.pop(0) # First cell in split is empty, just delete it
+
+    spiprof_cell_dict = {} # Result dictionary
+    for spiprof_cell in spiprof_cells:
+        spiprof_cell_name, spiprof_cell_data = parse_spiprof_cell(spiprof_cell)
+        spiprof_cell_dict[spiprof_cell_name] = spiprof_cell_data
+
+    return spiprof_cell_dict
+
+def parse_spiprof_cell(cell):
+    '''
+    Summary: splits up a spiprof cell into subcells, each subcell consisting of one set of parameters, voltage, and data
+    Returns: spiprof_cell_name: the name of the spiprof cell
+             spiprof_sub_cell_dict: dictionary in format: <sub_cell parameters> : { <sub_cell voltage> : {sub_cell data}} 
+    '''
+    spiprof_sub_cells = cell.split('\n\n')
+    spiprof_cell_name = spiprof_sub_cells[0]
+    spiprof_sub_cells.pop(0)
+
+    spiprof_sub_cell_dict = {}
+    for sub_cell in spiprof_sub_cells:
+        if (sub_cell != '\n'):
+
+            # The first item in the split will contain parameters. The rest goes to a different function for more parsing
+            spiprof_sub_cell_divide = sub_cell.split(';\n', 1)
+
+            spiprof_parameters_group, spiprof_voltage_parameter, spiprof_parameters_hash, spiprof_voltage_hash = parse_spiprof_parameters(spiprof_sub_cell_divide[0])
+
+            # Because there are mutiple entries with the same parameter hash, only create a new dictionary if one does not exist
+            if spiprof_parameters_hash not in spiprof_sub_cell_dict:
+                spiprof_sub_cell_dict[spiprof_parameters_hash] = {}
+
+            for key, value in spiprof_parameters_group.items():
+                spiprof_sub_cell_dict[spiprof_parameters_hash][key] = value
+
+            spiprof_sub_cell_dict[spiprof_parameters_hash][spiprof_voltage_hash] = parse_spiprof_sub_cell(spiprof_sub_cell_divide[1])
+            for key, value in spiprof_voltage_parameter.items():
+                spiprof_sub_cell_dict[spiprof_parameters_hash][spiprof_voltage_hash][key] = value
+        
+    return spiprof_cell_name, spiprof_sub_cell_dict
+
+def parse_spiprof_parameters(parameters):
+    '''
+    Summary: parses and hashes voltage and first-level parameter information.
+             ie. "C1 = 0 F ; R = 0 Ohm ; C2 = 1e-15 F ; Slew1 = 1.25e-11 S ; Slew2 = 7.5e-12 S ;"
+    Returns: spiprof_parameters_dict: dictionary in format: <parameter name>: <parameter value>
+             spiprof_voltage_parameter: dictionary in format: <pin name> : <voltage value>
+             spiprof_parameters_hash: string representing the other paramters for the subcell
+             spiprof_voltage_hash: string representing the voltage parameter for the subcell
+    '''
+    spiprof_parameters_raw = parameters.split(' ;')
+    spiprof_voltage = 0.0
+    spiprof_parameters_dict = {}
+
+    # Handling voltage separate than the other parameters because it has its own hash
+    voltage_parameter_list = spiprof_parameters_raw[0].split(' = ', 1)
+    voltage_name = voltage_parameter_list[0].lstrip()
+    voltage_value_list = voltage_parameter_list[1].split(' ')
+    spiprof_voltage = float(voltage_value_list[0])
+    spiprof_voltage_parameter = {}
+    spiprof_voltage_parameter[voltage_name] = spiprof_voltage
+    #voltage_unit = voltage_value_list[1]
+    spiprof_parameters_raw.pop(0)
+
+    for parameter in spiprof_parameters_raw:
+        parameter_list = parameter.split(' = ', 1)
+        parameter_name = parameter_list[0].lstrip()
+        parameter_value_list = parameter_list[1].split(' ')
+        parameter_value = float(parameter_value_list[0])
+        #parameter_value_unit = parameter_value_list[1]
+        spiprof_parameters_dict[parameter_name] = parameter_value
+        
+    spiprof_parameters_hash_list = parameters.split(' ;', 1)
+    spiprof_voltage_hash = spiprof_parameters_hash_list[0].lstrip()
+    spiprof_parameters_hash = spiprof_parameters_hash_list[1].lstrip()
+    return spiprof_parameters_dict, spiprof_voltage_parameter, spiprof_parameters_hash, spiprof_voltage_hash
+
+def parse_spiprof_sub_cell(sub_cell):
+    '''
+    Summary: parses subcell data. Gets secondary parameters, data label names, and data
+    Returns: spiprof_data_group_dict: dictionary in format: <parameter hash>: {<pin name>: {data label: data}}
+    '''
+    spiprof_data_group_dict = {}
+    spiprof_data_group_list = sub_cell.split('      state = ')
+    spiprof_data_group_list.pop(0)
+
+    for data_group in spiprof_data_group_list:
+        spiprof_data_dict = {}
+        spiprof_data_lines = data_group.split('\n')
+        spiprof_data_hash = 'state = ' + spiprof_data_lines[0]
+
+        spiprof_data_parameters_dict = {}
+        spiprof_data_parameters_raw = spiprof_data_lines[0].split(' ;')
+
+        # because we have to split on state, and 'state = ' is erased, we need to handle it separately
+        spiprof_data_parameters_dict['state'] = spiprof_data_parameters_raw[0]
+        spiprof_data_parameters_raw.pop(0)
+
+        for parameter in spiprof_data_parameters_raw:
+            if parameter != '':
+                parameter_list = parameter.split(' = ', 1)
+                parameter_name = parameter_list[0].lstrip()
+                parameter_value = parameter_list[1]
+                spiprof_data_parameters_dict[parameter_name] = parameter_value 
+
+        spiprof_data_lines.pop(0)
+
+        # Store data labels to be used in lower dictionaries
+        spiprof_data_labels = spiprof_data_lines[0].split()
+        spiprof_data_labels.pop(0) # pop off empty cell
+
+        spiprof_data_lines.pop(0)
+
+        for spiprof_data_line in spiprof_data_lines:
+            if (spiprof_data_line != 'Info: Done' and spiprof_data_line != ''):
+                spiprof_data_raw = spiprof_data_line.split()
+                spiprof_pin_name = spiprof_data_raw.pop(0) # pop off pin name
+                spiprof_pin_data_dict = {}
+                label_index = 0
+                for spiprof_data_label in spiprof_data_labels:
+                    spiprof_pin_data_dict[spiprof_data_label] = float(spiprof_data_raw[label_index * 2])
+                    # data_unit = piprof_data_raw[label_index * 2 + 1]
+                    label_index = label_index + 1
+                spiprof_data_dict[spiprof_pin_name] = spiprof_pin_data_dict
+        spiprof_data_group_dict[spiprof_data_hash] = spiprof_data_dict
+    return spiprof_data_group_dict
+
+
 cdev_cells = parse_cdev()
 pgarc_cells = parse_pgarc()
+spiprof_cells = parse_spiprof()
+
 compare_pin_names(cdev_cells,  pgarc_cells)
