@@ -305,13 +305,14 @@ def parse_spiprof_parameters(parameters):
         
     spiprof_parameters_hash_list = parameters.split(' ;', 1)
     spiprof_voltage_hash = spiprof_parameters_hash_list[0].lstrip()
-    spiprof_parameters_hash = spiprof_parameters_hash_list[1].lstrip()
+    spiprof_parameters_hash = spiprof_parameters_hash_list[1].lstrip() + ';'
     return spiprof_parameters_dict, spiprof_voltage_parameter, spiprof_parameters_hash, spiprof_voltage_hash
 
 def parse_spiprof_sub_cell(sub_cell):
     '''
     Summary: parses subcell data. Gets secondary parameters, data label names, and data
-    Returns: spiprof_data_group_dict: dictionary in format: <parameter hash>: {<pin name>: {data label: data}}
+    Returns: spiprof_data_parameters_dict: dictionary in format <parameter name>: <parameter value>
+             spiprof_data_group_dict: dictionary in format: <pin name>: {data label: data}
     '''
     spiprof_data_group_dict = {}
     spiprof_data_group_list = sub_cell.split('      state = ')
@@ -355,7 +356,13 @@ def parse_spiprof_sub_cell(sub_cell):
                     # data_unit = piprof_data_raw[label_index * 2 + 1]
                     label_index = label_index + 1
                 spiprof_data_dict[spiprof_pin_name] = spiprof_pin_data_dict
-        spiprof_data_group_dict[spiprof_data_hash] = spiprof_data_dict
+
+        # Add parameter values and data values into dictionary
+        spiprof_data_group_dict[spiprof_data_hash] = {}
+        for key, value in spiprof_data_parameters_dict.items():
+            spiprof_data_group_dict[spiprof_data_hash][key] = value
+
+        spiprof_data_group_dict[spiprof_data_hash]['pins'] = spiprof_data_dict
     return spiprof_data_group_dict
 
 
