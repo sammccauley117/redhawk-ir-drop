@@ -57,7 +57,6 @@ def parse_cdev():
     cell_dict = {} # Result dictionary
     for cell in cells:
         cell_name, cell_data = parse_cdev_cell(cell)
-        print(cell_name)
         cell_dict[cell_name] = cell_data
 
     return cell_dict
@@ -93,7 +92,6 @@ def parse_cdev_cell(cell):
         sub_cell_dict[parameter_data_hash] = parameter_data
         # Add the pin data
         sub_cell_dict[parameter_data_hash]['pins'] = pin_data
-    #print('A' + cell_name + 'A')
 
     return cell_name, sub_cell_dict
 
