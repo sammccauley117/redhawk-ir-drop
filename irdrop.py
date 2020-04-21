@@ -57,6 +57,7 @@ def parse_cdev():
     cell_dict = {} # Result dictionary
     for cell in cells:
         cell_name, cell_data = parse_cdev_cell(cell)
+        print(cell_name)
         cell_dict[cell_name] = cell_data
 
     return cell_dict
@@ -92,7 +93,7 @@ def parse_cdev_cell(cell):
         sub_cell_dict[parameter_data_hash] = parameter_data
         # Add the pin data
         sub_cell_dict[parameter_data_hash]['pins'] = pin_data
-
+    #print('A' + cell_name + 'A')
 
     return cell_name, sub_cell_dict
 
@@ -247,7 +248,7 @@ def parse_spiprof_cell(cell):
              spiprof_sub_cell_dict: dictionary in format: <sub_cell parameters> : { <sub_cell voltage> : {sub_cell data}} 
     '''
     spiprof_sub_cells = cell.split('\n\n')
-    spiprof_cell_name = spiprof_sub_cells[0]
+    spiprof_cell_name = spiprof_sub_cells[0].split()[0]
     spiprof_sub_cells.pop(0)
 
     spiprof_sub_cell_dict = {}
