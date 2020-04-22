@@ -35,6 +35,43 @@ def compare_pin_names(cdev_cells, pgarc_cells):
                         message = 'pin "{}" in pgarc but not in cdev for cell: "{}" and sub cell: "{}"'.format(pin, cell_name, cdev_sub_cell)
                         error(message)
 
+def compare_cell_names(cdev_cells, spiprof_cells, pgarc_cells):
+    cdev_cell_names = list(cdev_cells.keys())
+    spiprof_cell_names = list(spiprof_cells.keys())
+    pgarc_cell_names = list(pgarc_cells.keys())
+
+    # Checks if the cell count is consistent across views
+    if (~((len(cdev_cell_names) == len(spiprof_cell_names)) and (len(spiprof_cell_names) == len(pgarc_cell_names)))):
+        message = 'cell count mismatch for views: cdev - "{}", pgarc - "{}", spiprof - "{}"'.format(len(cdev_cell_names), len(pgarc_cell_names), len(spiprof_cell_names))
+        error(message)
+
+    # Checks cdev cells against spiprof and pgarc cells
+    for cell_name in cdev_cell_names:
+        if cell_name not in spiprof_cell_names:
+            message = 'cell "{}" in cdev but not in spiprof'.format(cell_name)
+            error(message)
+        if cell_name not in pgarc_cell_names:
+            message = 'cell "{}" in cdev but not in pgarc'.format(cell_name)
+            error(message)
+
+    # Checks spiprof cells against cdev and pgarc cells
+    for cell_name in spiprof_cell_names:
+        if cell_name not in cdev_cell_names:
+            message = 'cell "{}" in spiprof but not in cdev'.format(cell_name)
+            error(message)
+        if cell_name not in pgarc_cell_names:
+            message = 'cell "{}" in spiprof but not in pgarc'.format(cell_name)
+            error(message)
+
+    # Checks pgarc cells against cdev and spiprof cells
+    for cell_name in pgarc_cell_names:
+        if cell_name not in cdev_cell_names:
+            message = 'cell "{}" in pgarc but not in cdev'.format(cell_name)
+            error(message)
+        if cell_name not in cdev_cell_names:
+            message = 'cell "{}" in pgarc but not in spiprof'.format(cell_name)
+            error(message)
+
 ################################################################################
 # .cdev Parsing
 ################################################################################
@@ -243,7 +280,7 @@ def parse_spiprof_cell(cell):
     '''
     Summary: splits up a spiprof cell into subcells, each subcell consisting of one set of parameters, voltage, and data
     Returns: spiprof_cell_name: the name of the spiprof cell
-             spiprof_sub_cell_dict: dictionary in format: <sub_cell parameters> : { <sub_cell voltage> : {sub_cell data}} 
+             spiprof_sub_cell_dict: dictionary in format: <sub_cell parameters> : { <sub_cell voltage> : {sub_cell data}}
     '''
     spiprof_sub_cells = cell.split('\n\n')
     spiprof_cell_name = spiprof_sub_cells[0].split()[0]
@@ -268,7 +305,7 @@ def parse_spiprof_cell(cell):
             spiprof_sub_cell_dict[spiprof_parameters_hash][spiprof_voltage_hash] = parse_spiprof_sub_cell(spiprof_sub_cell_divide[1])
             for key, value in spiprof_voltage_parameter.items():
                 spiprof_sub_cell_dict[spiprof_parameters_hash][spiprof_voltage_hash][key] = value
-        
+
     return spiprof_cell_name, spiprof_sub_cell_dict
 
 def parse_spiprof_parameters(parameters):
@@ -301,7 +338,7 @@ def parse_spiprof_parameters(parameters):
         parameter_value = float(parameter_value_list[0])
         #parameter_value_unit = parameter_value_list[1]
         spiprof_parameters_dict[parameter_name] = parameter_value
-        
+
     spiprof_parameters_hash_list = parameters.split(' ;', 1)
     spiprof_voltage_hash = spiprof_parameters_hash_list[0].lstrip()
     spiprof_parameters_hash = spiprof_parameters_hash_list[1].lstrip() + ';'
@@ -334,7 +371,7 @@ def parse_spiprof_sub_cell(sub_cell):
                 parameter_list = parameter.split(' = ', 1)
                 parameter_name = parameter_list[0].lstrip()
                 parameter_value = parameter_list[1]
-                spiprof_data_parameters_dict[parameter_name] = parameter_value 
+                spiprof_data_parameters_dict[parameter_name] = parameter_value
 
         spiprof_data_lines.pop(0)
 
@@ -370,3 +407,4 @@ pgarc_cells = parse_pgarc()
 spiprof_cells = parse_spiprof()
 
 compare_pin_names(cdev_cells,  pgarc_cells)
+compare_cell_names(cdev_cells, spiprof_cells, pgarc_cells)
