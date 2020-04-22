@@ -20,6 +20,10 @@ CDEV_UNITS = {
 }
 
 ################################################################################
+# Helper functions
+################################################################################
+
+################################################################################
 # Error checking
 ################################################################################
 def error(message):
@@ -36,40 +40,22 @@ def compare_pin_names(cdev_cells, pgarc_cells):
                         error(message)
 
 def compare_cell_names(cdev_cells, spiprof_cells, pgarc_cells):
+    # Extract cell names from each view
     cdev_cell_names = list(cdev_cells.keys())
     spiprof_cell_names = list(spiprof_cells.keys())
     pgarc_cell_names = list(pgarc_cells.keys())
 
-    # Checks if the cell count is consistent across views
-    if (~((len(cdev_cell_names) == len(spiprof_cell_names)) and (len(spiprof_cell_names) == len(pgarc_cell_names)))):
-        message = 'cell count mismatch for views: cdev - "{}", pgarc - "{}", spiprof - "{}"'.format(len(cdev_cell_names), len(pgarc_cell_names), len(spiprof_cell_names))
-        error(message)
-
-    # Checks cdev cells against spiprof and pgarc cells
-    for cell_name in cdev_cell_names:
-        if cell_name not in spiprof_cell_names:
-            message = 'cell "{}" in cdev but not in spiprof'.format(cell_name)
-            error(message)
-        if cell_name not in pgarc_cell_names:
-            message = 'cell "{}" in cdev but not in pgarc'.format(cell_name)
-            error(message)
-
-    # Checks spiprof cells against cdev and pgarc cells
-    for cell_name in spiprof_cell_names:
-        if cell_name not in cdev_cell_names:
-            message = 'cell "{}" in spiprof but not in cdev'.format(cell_name)
-            error(message)
-        if cell_name not in pgarc_cell_names:
-            message = 'cell "{}" in spiprof but not in pgarc'.format(cell_name)
-            error(message)
-
     # Checks pgarc cells against cdev and spiprof cells
     for cell_name in pgarc_cell_names:
+        message = ''
         if cell_name not in cdev_cell_names:
             message = 'cell "{}" in pgarc but not in cdev'.format(cell_name)
-            error(message)
-        if cell_name not in cdev_cell_names:
-            message = 'cell "{}" in pgarc but not in spiprof'.format(cell_name)
+        if cell_name not in spiprof_cell_names:
+            if message == '':
+                message = 'cell "{}" in pgarc but not in spiprof'.format(cell_name)
+            else:
+                message += ' and spiprof'
+        if message != '':
             error(message)
 
 ################################################################################
