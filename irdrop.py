@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 
 import argparse
+import sqlite3
+import os.path
 
 # Set up and parse command line arguments
 parser = argparse.ArgumentParser(description='''Runs an IR drop analysis comparing
@@ -22,6 +24,33 @@ CDEV_UNITS = {
 ################################################################################
 # Helper functions
 ################################################################################
+
+################################################################################
+# Database creation
+################################################################################
+
+def create_tables(connection):
+    cursor = connection.cursor()
+    # Create cdev table
+    cursor.execute('''
+    CREATE TABLE cdev
+    (cell, temperature, state, vector, active_input, active_output,
+    vpwr, vgnd, pin, esc, esr, leak)
+    ''')
+    # Create spiprof table
+    cursor.execute('''
+    CREATE TABLE spiprof
+    (cell, vpwr, c1, r, c2, slew1, slew2, state, vector, active_input, active_output,
+    pin, peak, area, width)
+    ''')
+    # Create pgarc table
+    cursor.execute('''
+    CREATE TABLE pgarc
+    (cell, pin)
+    ''')
+    # Save changes
+    connection.commit()
+
 
 ################################################################################
 # Error checking
@@ -387,6 +416,20 @@ def parse_spiprof_sub_cell(sub_cell):
         spiprof_data_group_dict[spiprof_data_hash]['pins'] = spiprof_data_dict
     return spiprof_data_group_dict
 
+# Check if db already exists before creating new one
+if(os.path.isfile('redhawk.db')):
+    connection = sqlite3.connect('redhawk.db')
+else:
+    connection = sqlite3.connect('redhawk.db')
+    create_tables(connection)
+
+# Inserting into and querying from the tables
+# c = connection.cursor()
+# c.execute("INSERT INTO pgarc VALUES ('and2_16x', 'VPWR')")
+# connection.commit()
+# for row in c.execute('SELECT * FROM pgarc'):
+#     print(row)
+# connection.close()
 
 cdev_cells = parse_cdev()
 pgarc_cells = parse_pgarc()
