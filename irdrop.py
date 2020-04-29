@@ -272,13 +272,13 @@ def parse_pgarc():
 # .spiprof Parsing
 ################################################################################
 
-def parse_spiprof():
+def parse_spiprof(file, connection):
     '''
     Summary: splits up and extracts information for each spiprof cell
     Returns: dictionary of all cells in format <cell name> : [<pin name>]
     '''
     # First, split up pgarc file into a list of text segments for each individual cell
-    with open(args.spiprof_filename,'r') as f:
+    with open(file,'r') as f:
         data = f.read()
         spiprof_cells = data.split('cell: ')
         del data
@@ -286,12 +286,10 @@ def parse_spiprof():
 
     spiprof_cell_dict = {} # Result dictionary
     for spiprof_cell in spiprof_cells:
-        spiprof_cell_name, spiprof_cell_data = parse_spiprof_cell(spiprof_cell)
-        spiprof_cell_dict[spiprof_cell_name] = spiprof_cell_data
+        parse_spiprof_cell(spiprof_cell, connection)
+        connection.commit()
 
-    return spiprof_cell_dict
-
-def parse_spiprof_cell(cell):
+def parse_spiprof_cell(cell, connection):
     '''
     Summary: splits up a spiprof cell into subcells, each subcell consisting of one set of parameters, voltage, and data
     Returns: spiprof_cell_name: the name of the spiprof cell
@@ -308,20 +306,11 @@ def parse_spiprof_cell(cell):
             # The first item in the split will contain parameters. The rest goes to a different function for more parsing
             spiprof_sub_cell_divide = sub_cell.split(';\n', 1)
 
-            spiprof_parameters_group, spiprof_voltage_parameter, spiprof_parameters_hash, spiprof_voltage_hash = parse_spiprof_parameters(spiprof_sub_cell_divide[0])
+            spiprof_parameters_group, spiprof_voltage_parameter = parse_spiprof_parameters(spiprof_sub_cell_divide[0])
 
             # Because there are mutiple entries with the same parameter hash, only create a new dictionary if one does not exist
-            if spiprof_parameters_hash not in spiprof_sub_cell_dict:
-                spiprof_sub_cell_dict[spiprof_parameters_hash] = {}
+            parse_spiprof_sub_cell(spiprof_cell_name, spiprof_voltage_parameter, spiprof_parameters_group, spiprof_sub_cell_divide[1], connection)
 
-            for key, value in spiprof_parameters_group.items():
-                spiprof_sub_cell_dict[spiprof_parameters_hash][key] = value
-
-            spiprof_sub_cell_dict[spiprof_parameters_hash][spiprof_voltage_hash] = parse_spiprof_sub_cell(spiprof_sub_cell_divide[1])
-            for key, value in spiprof_voltage_parameter.items():
-                spiprof_sub_cell_dict[spiprof_parameters_hash][spiprof_voltage_hash][key] = value
-
-    return spiprof_cell_name, spiprof_sub_cell_dict
 
 def parse_spiprof_parameters(parameters):
     '''
@@ -341,8 +330,7 @@ def parse_spiprof_parameters(parameters):
     voltage_name = voltage_parameter_list[0].lstrip()
     voltage_value_list = voltage_parameter_list[1].split(' ')
     spiprof_voltage = float(voltage_value_list[0])
-    spiprof_voltage_parameter = {}
-    spiprof_voltage_parameter[voltage_name] = spiprof_voltage
+    spiprof_voltage_parameter = (voltage_name, spiprof_voltage)
     #voltage_unit = voltage_value_list[1]
     spiprof_parameters_raw.pop(0)
 
@@ -354,12 +342,9 @@ def parse_spiprof_parameters(parameters):
         #parameter_value_unit = parameter_value_list[1]
         spiprof_parameters_dict[parameter_name] = parameter_value
 
-    spiprof_parameters_hash_list = parameters.split(' ;', 1)
-    spiprof_voltage_hash = spiprof_parameters_hash_list[0].lstrip()
-    spiprof_parameters_hash = spiprof_parameters_hash_list[1].lstrip() + ';'
-    return spiprof_parameters_dict, spiprof_voltage_parameter, spiprof_parameters_hash, spiprof_voltage_hash
+    return spiprof_parameters_dict, spiprof_voltage_parameter
 
-def parse_spiprof_sub_cell(sub_cell):
+def parse_spiprof_sub_cell(cell_name, voltage_parameter, cell_parameters, sub_cell, connection):
     '''
     Summary: parses subcell data. Gets secondary parameters, data label names, and data
     Returns: spiprof_data_parameters_dict: dictionary in format <parameter name>: <parameter value>
@@ -372,7 +357,6 @@ def parse_spiprof_sub_cell(sub_cell):
     for data_group in spiprof_data_group_list:
         spiprof_data_dict = {}
         spiprof_data_lines = data_group.split('\n')
-        spiprof_data_hash = 'state = ' + spiprof_data_lines[0]
 
         spiprof_data_parameters_dict = {}
         spiprof_data_parameters_raw = spiprof_data_lines[0].split(' ;')
@@ -407,13 +391,11 @@ def parse_spiprof_sub_cell(sub_cell):
                     # data_unit = piprof_data_raw[label_index * 2 + 1]
                     label_index = label_index + 1
                 spiprof_data_dict[spiprof_pin_name] = spiprof_pin_data_dict
+                query = "INSERT INTO spiprof VALUES (\"{cell}\", {vpwr}, {c1}, {r}, {c2}, {slew1}, {slew2}, \"{state}\", \"{vector}\", \"{active_input}\", \"{active_output}\", \"{pin}\", {peak}, {area}, {width})".format(cell=cell_name, vpwr=voltage_parameter[1], c1=cell_parameters["C1"], r=cell_parameters["R"], c2=cell_parameters["C2"], slew1=cell_parameters["Slew1"], slew2=cell_parameters["Slew2"], state=spiprof_data_parameters_dict['state'], vector=spiprof_data_parameters_dict['vector'], active_input=spiprof_data_parameters_dict['active_input'], active_output=spiprof_data_parameters_dict['active_output'], pin=spiprof_pin_name, peak=spiprof_pin_data_dict['peak'], area=spiprof_pin_data_dict['area'], width=spiprof_pin_data_dict['width'])
+                #print(query)
+                cursor = connection.cursor()
+                cursor.execute(query)
 
-        # Add parameter values and data values into dictionary
-        spiprof_data_group_dict[spiprof_data_hash] = {}
-        for key, value in spiprof_data_parameters_dict.items():
-            spiprof_data_group_dict[spiprof_data_hash][key] = value
-
-        spiprof_data_group_dict[spiprof_data_hash]['pins'] = spiprof_data_dict
     return spiprof_data_group_dict
 
 # Check if db already exists before creating new one
@@ -422,6 +404,7 @@ if(os.path.isfile('redhawk.db')):
 else:
     connection = sqlite3.connect('redhawk.db')
     create_tables(connection)
+    parse_spiprof(args.spiprof_filename, connection)
 
 # Inserting into and querying from the tables
 # c = connection.cursor()
@@ -433,7 +416,6 @@ else:
 
 cdev_cells = parse_cdev()
 pgarc_cells = parse_pgarc()
-spiprof_cells = parse_spiprof()
 
-compare_pin_names(cdev_cells,  pgarc_cells)
-compare_cell_names(cdev_cells, spiprof_cells, pgarc_cells)
+#compare_pin_names(cdev_cells,  pgarc_cells)
+#compare_cell_names(cdev_cells, spiprof_cells, pgarc_cells)
