@@ -90,14 +90,41 @@ def compare_cell_names(cdev_cells, spiprof_cells, pgarc_cells):
 ################################################################################
 # .cdev Parsing
 ################################################################################
+def insert_cdev(filename, connection):
+    '''
+    Summary: takes a cdev file, parses it, and inserts it into the cdev database table
+    Input:
+        filename: filename of the cdev file to be inserted
+        connection: sqllite connection object
+    '''
+    # Parse the cdev file into JSON format
+    cells = parse_cdev(filename)
 
-def parse_cdev():
+    # Iterate through all the JSON cells, parameter variations, and pins. Push each unit of data
+    # to the database table
+    for cell, parameters_variations in cells.items():
+        for parameters in parameters_variations.values():
+            for pin, pin_data in parameters['pins'].items():
+                query = '''INSERT INTO cdev VALUES ("{cell}", {temperature}, "{state}", "{vector}", "{active_input}",
+                    "{active_output}", {vpwr}, {vgnd}, "{pin}", {esc}, {esr}, {leak})'''.format(cell=cell,
+                    temperature=parameters['Temperature'], state=parameters['State'], vector=parameters['vector'],
+                    active_input=parameters['active_input'], active_output=parameters['active_output'],
+                    vpwr=parameters['VPWR'], vgnd=parameters['VGND'], pin=pin, esc=pin_data['esc'], esr=pin_data['esr'],
+                    leak=pin_data['leak'])
+                cursor = connection.cursor()
+                cursor.execute(query)
+
+    # Commit/save the changes to the database table
+    connection.commit()
+
+def parse_cdev(filename):
     '''
     Summary: splits up and extracts information for each cdev cell
+    Input: cdev filename
     Returns: dictionary of all cells in format <cell name> : {<sub_cells>}
     '''
     # First, split up cdev file into a list of text segments for each individual cell
-    with open(args.cdev_filename,'r') as f:
+    with open(filename,'r') as f:
         data = f.read()
     cells = data.split('Info: cell=')
     cells.pop(0) # First element of the split is just the header info, delete it
@@ -401,9 +428,16 @@ def parse_spiprof_sub_cell(cell_name, voltage_parameter, cell_parameters, sub_ce
 # Check if db already exists before creating new one
 if(os.path.isfile('redhawk.db')):
     connection = sqlite3.connect('redhawk.db')
+    print('cdev sample:')
+    for row in connection.execute('SELECT * FROM cdev LIMIT 10'):
+        print(row)
+    print('\nspiprof sample:')
+    for row in connection.execute('SELECT * FROM spiprof LIMIT 10'):
+        print(row)
 else:
     connection = sqlite3.connect('redhawk.db')
     create_tables(connection)
+    insert_cdev(args.cdev_filename, connection)
     parse_spiprof(args.spiprof_filename, connection)
 
 # Inserting into and querying from the tables
@@ -414,8 +448,8 @@ else:
 #     print(row)
 # connection.close()
 
-cdev_cells = parse_cdev()
-pgarc_cells = parse_pgarc()
+# cdev_cells = parse_cdev()
+# pgarc_cells = parse_pgarc()
 
 #compare_pin_names(cdev_cells,  pgarc_cells)
 #compare_cell_names(cdev_cells, spiprof_cells, pgarc_cells)
