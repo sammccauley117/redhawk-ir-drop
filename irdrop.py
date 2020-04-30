@@ -3,6 +3,7 @@
 import argparse
 import sqlite3
 import os.path
+import re
 
 # Set up and parse command line arguments
 parser = argparse.ArgumentParser(description='''Runs an IR drop analysis comparing
@@ -31,23 +32,33 @@ CDEV_UNITS = {
 
 def create_tables(connection):
     cursor = connection.cursor()
+
     # Create cdev table
     cursor.execute('''
     CREATE TABLE cdev
     (cell, temperature, state, vector, active_input, active_output,
     vpwr, vgnd, pin, esc, esr, leak)
     ''')
+
     # Create spiprof table
     cursor.execute('''
     CREATE TABLE spiprof
     (cell, vpwr, c1, r, c2, slew1, slew2, state, vector, active_input, active_output,
     pin, peak, area, width)
     ''')
+
     # Create pgarc table
     cursor.execute('''
     CREATE TABLE pgarc
     (cell, pin)
     ''')
+
+    # Create liberty file table
+    cursor.execute('''
+    CREATE TABLE lib
+    (cell, area)
+    ''')
+
     # Save changes
     connection.commit()
 
@@ -425,6 +436,51 @@ def parse_spiprof_sub_cell(cell_name, voltage_parameter, cell_parameters, sub_ce
 
     return spiprof_data_group_dict
 
+################################################################################
+# .lib Parsing
+################################################################################
+def insert_lib(filename, connection):
+    '''
+    Summary: reads a liberty file, extracts the name and area of a cell, and inserts
+        it into a database
+    Input:
+        filename: liberty filename
+        connection: sqllite connection object
+    '''
+    # First, split up lib file into a list of raw text segments for each individual cell
+    with open(filename,'r') as f:
+        data = f.read()
+    cells_raw = re.compile("[^_]cell \(").split(data)
+    cells_raw.pop(0) # First index of the split is header info, throw it out
+
+    # Iterate through each cell, grab its name and area, and insert it into the database
+    for cell_raw in cells_raw:
+        # Get name
+        name = cell_raw.split(')')[0]
+        if name.startswith("\""):
+            name = name[1:]
+        if name.endswith("\""):
+            name = name[:-1]
+
+        # Get area
+        for line in cell_raw.splitlines():
+            if line.strip().startswith('area : '):
+                area = line.strip().split('area : ')[-1]
+                if area[-1] == ';': area = area[:-1]
+                area = float(area)
+                break
+
+        # Insert into database
+        query = 'INSERT INTO lib VALUES ("{cell}", {area})'.format(cell=name, area=area)
+        cursor = connection.cursor()
+        cursor.execute(query)
+
+    connection.commit() # Save database changes
+
+################################################################################
+# Main script
+################################################################################
+
 # Check if db already exists before creating new one
 if(os.path.isfile('redhawk.db')):
     connection = sqlite3.connect('redhawk.db')
@@ -434,10 +490,14 @@ if(os.path.isfile('redhawk.db')):
     print('\nspiprof sample:')
     for row in connection.execute('SELECT * FROM spiprof LIMIT 10'):
         print(row)
+    print('\nlib sample:')
+    for row in connection.execute('SELECT * FROM lib LIMIT 10'):
+        print(row)
 else:
     connection = sqlite3.connect('redhawk.db')
     create_tables(connection)
     insert_cdev(args.cdev_filename, connection)
+    insert_lib("scf45rt_ssplv_1p62lv1_n40c_typpc_fsme_tplml_PVT3.lib", connection)
     parse_spiprof(args.spiprof_filename, connection)
 
 # Inserting into and querying from the tables
