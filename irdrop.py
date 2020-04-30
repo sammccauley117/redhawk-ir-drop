@@ -8,10 +8,13 @@ import re
 # Set up and parse command line arguments
 parser = argparse.ArgumentParser(description='''Runs an IR drop analysis comparing
     the values of .cdev, .spiprof, and .pgarc files''')
-parser.add_argument('cdev_filename')
-parser.add_argument('spiprof_filename')
-parser.add_argument('pgarc_filename')
+parser.add_argument('input_file')
 args = parser.parse_args()
+
+# Load the list of files
+with open(args.input_file) as f:
+    files = f.readlines()
+files = [file.strip() for file in files]
 
 # Establish what the units for each cdev variable should be
 CDEV_UNITS = {
@@ -487,18 +490,33 @@ if(os.path.isfile('redhawk.db')):
     print('cdev sample:')
     for row in connection.execute('SELECT * FROM cdev LIMIT 10'):
         print(row)
+    count = len(connection.execute('SELECT * FROM cdev').fetchall())
+    print('Number of cdev entries:', count)
+
     print('\nspiprof sample:')
     for row in connection.execute('SELECT * FROM spiprof LIMIT 10'):
         print(row)
+    count = len(connection.execute('SELECT * FROM spiprof').fetchall())
+    print('Number of spiprof entries:', count)
+
     print('\nlib sample:')
     for row in connection.execute('SELECT * FROM lib LIMIT 10'):
         print(row)
+    count = len(connection.execute('SELECT * FROM lib').fetchall())
+    print('Number of lib entries:', count)
 else:
+    # Initialize database
     connection = sqlite3.connect('redhawk.db')
     create_tables(connection)
-    insert_cdev(args.cdev_filename, connection)
-    insert_lib("scf45rt_ssplv_1p62lv1_n40c_typpc_fsme_tplml_PVT3.lib", connection)
-    parse_spiprof(args.spiprof_filename, connection)
+
+    # Insert the file data into the database
+    for file in files:
+        if file.endswith('.cdev'):
+            insert_cdev(file, connection)
+        elif file.endswith('.spiprof'):
+            parse_spiprof(file, connection)
+        elif file.endswith('.lib'):
+            insert_lib(file, connection)
 
 # Inserting into and querying from the tables
 # c = connection.cursor()
