@@ -607,6 +607,12 @@ if(os.path.isfile('redhawk.db')):
     count = len(connection.execute('SELECT * FROM spiprof').fetchall())
     print('Number of spiprof entries:', count)
 
+    print('\npgarc sample:')
+    for row in connection.execute('SELECT * FROM pgarc LIMIT 10'):
+        print(row)
+    count = len(connection.execute('SELECT * FROM pgarc').fetchall())
+    print('Number of pgarc entries:', count)
+
     print('\nlib sample:')
     for row in connection.execute('SELECT * FROM lib LIMIT 10'):
         print(row)
