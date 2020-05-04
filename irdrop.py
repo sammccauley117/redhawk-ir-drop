@@ -2,7 +2,7 @@
 
 import argparse
 import sqlite3
-import os.path
+import os
 import re
 import matplotlib
 import numpy as np
@@ -10,7 +10,9 @@ import numpy as np
 # Set up and parse command line arguments
 parser = argparse.ArgumentParser(description='''Runs an IR drop analysis comparing
     the values of .cdev, .spiprof, and .pgarc files''')
-parser.add_argument('input_file')
+parser.add_argument('input_file', help=''''Name of the file containing
+    all the Redhawk views (.cdev, .pgarc, .spiprof, and .lib files)''')
+parser.add_argument('-e', '--errorfile', type=str, default='./error.log', help='Name of the output error file')
 args = parser.parse_args()
 
 # Load the list of files
@@ -86,11 +88,20 @@ def create_tables(connection):
 # Error checking
 ################################################################################
 def error(message):
+    '''
+    Summary: adds an error message to the error set
+    Input:
+        message: string of the error message
+    '''
     if message not in error_set:
-        print('ERROR:', message)
-        error_set.add(message)
+        error_set.add('ERROR: ' + message)
 
 def output_errors(filename):
+    '''
+    Summary: writes all the errors in the error set to the error file
+    Input:
+        filename: path of the error file
+    '''
     if (len(error_set) == 0):
         print('No errors found.')
     else:
@@ -622,7 +633,7 @@ else:
             insert_lib(file, connection)
         elif file.endswith('.pgarc'):
             parse_pgarc(file, connection)
-    output_errors("errors.log")
+    output_errors(args.errorfile)
 
 # Inserting into and querying from the tables
 # c = connection.cursor()
