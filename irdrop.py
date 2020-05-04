@@ -4,6 +4,7 @@ import argparse
 import sqlite3
 import os.path
 import re
+import matplotlib
 
 # Set up and parse command line arguments
 parser = argparse.ArgumentParser(description='''Runs an IR drop analysis comparing
@@ -24,6 +25,20 @@ CDEV_UNITS = {
     'leak': 'A',
     'Temperature': 'C'
 }
+
+SPIPROF_UNITS = {
+    'VPWR': 'V',
+    'C1': 'F',
+    'R': 'Ohm',
+    'C2': 'F',
+    'Slew1': 'S',
+    'Slew2': 'S',
+    'peak': 'A',
+    'area': 'C',
+    'width': 'S'
+}
+
+error_set = set()
 
 ################################################################################
 # Helper functions
@@ -70,7 +85,18 @@ def create_tables(connection):
 # Error checking
 ################################################################################
 def error(message):
-    print('ERROR:', message)
+    if message not in error_set:
+        print('ERROR:', message)
+        error_set.add(message)
+
+def output_errors(filename):
+    if (len(error_set) == 0):
+        print('No errors found.')
+    else:
+        print('Errors found. Please refer to ' + filename)
+        with open(filename, 'w') as error_file:
+            for error in error_set:
+                error_file.write(error + '\n')
 
 def compare_pin_names(cdev_cells, pgarc_cells):
     for cell_name, pins in pgarc_cells.items():
@@ -333,8 +359,7 @@ def parse_spiprof(file, connection):
 def parse_spiprof_cell(cell, connection):
     '''
     Summary: splits up a spiprof cell into subcells, each subcell consisting of one set of parameters, voltage, and data
-    Returns: spiprof_cell_name: the name of the spiprof cell
-             spiprof_sub_cell_dict: dictionary in format: <sub_cell parameters> : { <sub_cell voltage> : {sub_cell data}}
+    Calls helper functions that will add to the redhawk db
     '''
     spiprof_sub_cells = cell.split('\n\n')
     spiprof_cell_name = spiprof_sub_cells[0].split()[0]
@@ -347,20 +372,18 @@ def parse_spiprof_cell(cell, connection):
             # The first item in the split will contain parameters. The rest goes to a different function for more parsing
             spiprof_sub_cell_divide = sub_cell.split(';\n', 1)
 
-            spiprof_parameters_group, spiprof_voltage_parameter = parse_spiprof_parameters(spiprof_sub_cell_divide[0])
+            spiprof_parameters_group, spiprof_voltage_parameter = parse_spiprof_parameters(spiprof_cell_name, spiprof_sub_cell_divide[0])
 
             # Because there are mutiple entries with the same parameter hash, only create a new dictionary if one does not exist
             parse_spiprof_sub_cell(spiprof_cell_name, spiprof_voltage_parameter, spiprof_parameters_group, spiprof_sub_cell_divide[1], connection)
 
 
-def parse_spiprof_parameters(parameters):
+def parse_spiprof_parameters(cell_name, parameters):
     '''
     Summary: parses and hashes voltage and first-level parameter information.
              ie. "C1 = 0 F ; R = 0 Ohm ; C2 = 1e-15 F ; Slew1 = 1.25e-11 S ; Slew2 = 7.5e-12 S ;"
     Returns: spiprof_parameters_dict: dictionary in format: <parameter name>: <parameter value>
              spiprof_voltage_parameter: dictionary in format: <pin name> : <voltage value>
-             spiprof_parameters_hash: string representing the other paramters for the subcell
-             spiprof_voltage_hash: string representing the voltage parameter for the subcell
     '''
     spiprof_parameters_raw = parameters.split(' ;')
     spiprof_voltage = 0.0
@@ -372,7 +395,9 @@ def parse_spiprof_parameters(parameters):
     voltage_value_list = voltage_parameter_list[1].split(' ')
     spiprof_voltage = float(voltage_value_list[0])
     spiprof_voltage_parameter = (voltage_name, spiprof_voltage)
-    #voltage_unit = voltage_value_list[1]
+    voltage_unit = voltage_value_list[1]
+    if (voltage_unit != SPIPROF_UNITS['VPWR']):
+        error("Cell " + cell_name + " has incorrect voltage units. Expected \"" + SPIPROF_UNITS['VPWR'] + "\" but found \"" + voltage_unit + "\".")
     spiprof_parameters_raw.pop(0)
 
     for parameter in spiprof_parameters_raw:
@@ -380,7 +405,9 @@ def parse_spiprof_parameters(parameters):
         parameter_name = parameter_list[0].lstrip()
         parameter_value_list = parameter_list[1].split(' ')
         parameter_value = float(parameter_value_list[0])
-        #parameter_value_unit = parameter_value_list[1]
+        parameter_value_unit = parameter_value_list[1].strip()
+        if (parameter_value_unit != SPIPROF_UNITS[parameter_name]):
+            error("Cell " + cell_name + " has incorrect " + parameter_name + " units. Expected \"" + SPIPROF_UNITS[parameter_name] + "\" but found \"" + parameter_value_unit + "\".")
         spiprof_parameters_dict[parameter_name] = parameter_value
 
     return spiprof_parameters_dict, spiprof_voltage_parameter
@@ -388,12 +415,19 @@ def parse_spiprof_parameters(parameters):
 def parse_spiprof_sub_cell(cell_name, voltage_parameter, cell_parameters, sub_cell, connection):
     '''
     Summary: parses subcell data. Gets secondary parameters, data label names, and data
-    Returns: spiprof_data_parameters_dict: dictionary in format <parameter name>: <parameter value>
-             spiprof_data_group_dict: dictionary in format: <pin name>: {data label: data}
+    Checks if sequential cells have 4 states, and that combinational cells have 2 states. Uses name of cell.
+    Inserts cell data into the database.
     '''
     spiprof_data_group_dict = {}
     spiprof_data_group_list = sub_cell.split('      state = ')
     spiprof_data_group_list.pop(0)
+
+    if (cell_name.startswith('dff') or cell_name.startswith('sdff') or cell_name.startswith('latch')):
+        if (len(spiprof_data_group_list) != 4):
+            error("Cell " + cell_name + " is probably sequential, so it should have 4 states. Instead, it has " + str(len(spiprof_data_group_list)) + " states.")
+    else:
+        if (len(spiprof_data_group_list) != 2):
+            error("Cell " + cell_name + " is probably combinational, so it should have 2 states. Instead, it has " + str(len(spiprof_data_group_list)) + " states.")
 
     for data_group in spiprof_data_group_list:
         spiprof_data_dict = {}
@@ -429,15 +463,15 @@ def parse_spiprof_sub_cell(cell_name, voltage_parameter, cell_parameters, sub_ce
                 label_index = 0
                 for spiprof_data_label in spiprof_data_labels:
                     spiprof_pin_data_dict[spiprof_data_label] = float(spiprof_data_raw[label_index * 2])
-                    # data_unit = piprof_data_raw[label_index * 2 + 1]
+                    data_unit = spiprof_data_raw[label_index * 2 + 1]
+                    if (data_unit != SPIPROF_UNITS[spiprof_data_label]):
+                        error("Cell " + cell_name + " has incorrect " + spiprof_data_label + " units. Expected \"" + SPIPROF_UNITS[spiprof_data_label] + "\" but found \"" + data_unit + "\".")
                     label_index = label_index + 1
                 spiprof_data_dict[spiprof_pin_name] = spiprof_pin_data_dict
                 query = "INSERT INTO spiprof VALUES (\"{cell}\", {vpwr}, {c1}, {r}, {c2}, {slew1}, {slew2}, \"{state}\", \"{vector}\", \"{active_input}\", \"{active_output}\", \"{pin}\", {peak}, {area}, {width})".format(cell=cell_name, vpwr=voltage_parameter[1], c1=cell_parameters["C1"], r=cell_parameters["R"], c2=cell_parameters["C2"], slew1=cell_parameters["Slew1"], slew2=cell_parameters["Slew2"], state=spiprof_data_parameters_dict['state'], vector=spiprof_data_parameters_dict['vector'], active_input=spiprof_data_parameters_dict['active_input'], active_output=spiprof_data_parameters_dict['active_output'], pin=spiprof_pin_name, peak=spiprof_pin_data_dict['peak'], area=spiprof_pin_data_dict['area'], width=spiprof_pin_data_dict['width'])
                 #print(query)
                 cursor = connection.cursor()
                 cursor.execute(query)
-
-    return spiprof_data_group_dict
 
 ################################################################################
 # .lib Parsing
@@ -511,12 +545,14 @@ else:
 
     # Insert the file data into the database
     for file in files:
+        print("Parsing: " + file, flush=True)
         if file.endswith('.cdev'):
             insert_cdev(file, connection)
         elif file.endswith('.spiprof'):
             parse_spiprof(file, connection)
         elif file.endswith('.lib'):
             insert_lib(file, connection)
+    output_errors("errors.log")
 
 # Inserting into and querying from the tables
 # c = connection.cursor()
