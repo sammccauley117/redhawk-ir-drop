@@ -2,14 +2,20 @@
 
 import argparse
 import sqlite3
-import os.path
+import os
 import re
 
 # Set up and parse command line arguments
 parser = argparse.ArgumentParser(description='''Runs an IR drop analysis comparing
     the values of .cdev, .spiprof, and .pgarc files''')
-parser.add_argument('input_file')
+parser.add_argument('input_file', help=''''Name of the file containing
+    all the Redhawk views (.cdev, .pgarc, .spiprof, and .lib files)''')
+parser.add_argument('-e', '--errorfile', type=str, default='./error.txt', help='Name of the output error file')
 args = parser.parse_args()
+
+# Initialize the error file
+f = open(args.errorfile, "w")
+f.close()
 
 # Load the list of files
 with open(args.input_file) as f:
@@ -70,9 +76,22 @@ def create_tables(connection):
 # Error checking
 ################################################################################
 def error(message):
-    print('ERROR:', message)
+    '''
+    Summary: appends the given message to the error file
+    Input:
+        message: string error message
+    '''
+    with open(args.errorfile, 'a') as f:
+        f.write('ERROR: {}\n'.format(message))
 
 def compare_pin_names(cdev_cells, pgarc_cells):
+    '''
+    Summary: compares pin names of the same cells across different views and outputs
+        an error to the error file if there is a naming conflict
+    Input:
+        cdev_cells: JSON object of cdev cells
+        pgarc_cells: JSON object of pgarc cells
+    '''
     for cell_name, pins in pgarc_cells.items():
         if cell_name in cdev_cells:
             for cdev_sub_cell, cdev_sub_cell_data in cdev_cells[cell_name].items():
@@ -83,6 +102,14 @@ def compare_pin_names(cdev_cells, pgarc_cells):
                         error(message)
 
 def compare_cell_names(cdev_cells, spiprof_cells, pgarc_cells):
+    '''
+    Summary: compares cell names and cell names and outputs an error to the error file
+        if there is a naming conflict
+    Input:
+        cdev_cells: JSON object of cdev cells
+        spiprof_cells: JSON object of spiprof cells
+        pgarc_cells: JSON object of pgarc cells
+    '''
     # Extract cell names from each view
     cdev_cell_names = list(cdev_cells.keys())
     spiprof_cell_names = list(spiprof_cells.keys())
