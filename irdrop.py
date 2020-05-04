@@ -616,7 +616,7 @@ if(os.path.isfile('redhawk.db')):
     compare_cell_names(connection)
     check_voltage_variations(connection)
     compare_pin_names(connection)
-    output_errors("errors.log")
+    output_errors(args.errorfile)
 else:
     # Initialize database
     connection = sqlite3.connect('redhawk.db')
@@ -634,17 +634,3 @@ else:
         elif file.endswith('.pgarc'):
             parse_pgarc(file, connection)
     output_errors(args.errorfile)
-
-# Inserting into and querying from the tables
-# c = connection.cursor()
-# c.execute("INSERT INTO pgarc VALUES ('and2_16x', 'VPWR')")
-# connection.commit()
-# for row in c.execute('SELECT * FROM pgarc'):
-#     print(row)
-# connection.close()
-
-# cdev_cells = parse_cdev()
-# pgarc_cells = parse_pgarc()
-
-#compare_pin_names(cdev_cells,  pgarc_cells)
-#compare_cell_names(cdev_cells, spiprof_cells, pgarc_cells)

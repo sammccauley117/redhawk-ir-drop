@@ -4,4 +4,4 @@
 *.db
 *.lib
 graphs/**
-errors.log
+error.log
