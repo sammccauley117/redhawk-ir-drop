@@ -5,6 +5,7 @@ import sqlite3
 import os.path
 import re
 import matplotlib
+import numpy as np
 
 # Set up and parse command line arguments
 parser = argparse.ArgumentParser(description='''Runs an IR drop analysis comparing
@@ -98,34 +99,91 @@ def output_errors(filename):
             for error in error_set:
                 error_file.write(error + '\n')
 
-def compare_pin_names(cdev_cells, pgarc_cells):
-    for cell_name, pins in pgarc_cells.items():
-        if cell_name in cdev_cells:
-            for cdev_sub_cell, cdev_sub_cell_data in cdev_cells[cell_name].items():
-                cdev_pins = cdev_cells[cell_name][cdev_sub_cell]['pins'].keys()
-                for pin in pins:
-                    if pin not in cdev_pins:
-                        message = 'pin "{}" in pgarc but not in cdev for cell: "{}" and sub cell: "{}"'.format(pin, cell_name, cdev_sub_cell)
-                        error(message)
+def compare_pin_names(connection):
+    cursor = connection.cursor()
 
-def compare_cell_names(cdev_cells, spiprof_cells, pgarc_cells):
-    # Extract cell names from each view
-    cdev_cell_names = list(cdev_cells.keys())
-    spiprof_cell_names = list(spiprof_cells.keys())
-    pgarc_cell_names = list(pgarc_cells.keys())
+    # Query pin names for each view
+    pgarc_pin_names_query = '''SELECT DISTINCT cell, pin FROM pgarc'''
+    cursor.execute(pgarc_pin_names_query)
+    pgarc_pin_names = np.array(cursor.fetchall())
 
-    # Checks pgarc cells against cdev and spiprof cells
-    for cell_name in pgarc_cell_names:
-        message = ''
-        if cell_name not in cdev_cell_names:
-            message = 'cell "{}" in pgarc but not in cdev'.format(cell_name)
-        if cell_name not in spiprof_cell_names:
-            if message == '':
-                message = 'cell "{}" in pgarc but not in spiprof'.format(cell_name)
-            else:
-                message += ' and spiprof'
-        if message != '':
-            error(message)
+    cdev_pin_names_query = '''SELECT DISTINCT cell, pin FROM cdev'''
+    cursor.execute(cdev_pin_names_query)
+    cdev_pin_names = np.array(cursor.fetchall())
+
+    spiprof_pin_names_query = '''SELECT DISTINCT cell, pin FROM spiprof'''
+    cursor.execute(spiprof_pin_names_query)
+    spiprof_pin_names = np.array(cursor.fetchall())
+
+    # Compare cdev and spiprof pins against pgarc pins
+    for cell in pgarc_pin_names:
+        cell_name = cell[0]
+        pin_name = cell[1]
+
+        # Extract pin names from views
+        extracted_cdev_cell = cdev_pin_names[np.where(cdev_pin_names[:,0] == cell_name),:].squeeze(axis = 0)
+        extracted_cdev_pins = extracted_cdev_cell[:,1]
+        extracted_spiprof_cell = spiprof_pin_names[np.where(spiprof_pin_names[:,0] == cell_name),:].squeeze(axis = 0)
+        extracted_spiprof_pins = extracted_spiprof_cell[:,1]
+
+        if len(extracted_cdev_pins) != 0:
+            if pin_name not in extracted_cdev_pins:
+                message = 'pin {pin} mismatch between pgarc and cdev for cell {cell}'.format(pin = pin_name, cell = cell_name)
+                error(message)
+
+        if len(extracted_spiprof_pins) != 0:
+            if pin_name not in extracted_spiprof_pins:
+                message = 'pin {pin} mismatch between pgarc and spiprof for cell {cell}'.format(pin = pin_name, cell = cell_name)
+                error(message)
+
+def compare_cell_names(connection):
+    # Query cdev and spiprof cells that aren't in pgarc
+    cdev_query = '''SELECT cell FROM pgarc WHERE cell NOT IN (SELECT cell FROM cdev)'''
+    spiprof_query = '''SELECT cell FROM pgarc WHERE cell NOT IN (SELECT cell from spiprof)'''
+
+    cursor = connection.cursor()
+
+    for cell in cursor.execute(cdev_query):
+        message = 'cell {} in pgarc but not in cdev'.format(str(cell).replace('(\'','').replace('\',)',''))
+        error(message)
+
+    for cell in cursor.execute(spiprof_query):
+        message = 'cell {} in pgarc but not in spiprof'.format(str(cell).replace('(\'','').replace('\',)',''))
+        error(message)
+
+def check_voltage_variations(connection):
+    cursor = connection.cursor()
+
+    # Extract nominal voltage from cdev view
+    nominal_voltage_query = '''SELECT DISTINCT cell, vpwr FROM cdev'''
+    cursor.execute(nominal_voltage_query)
+    nominal_voltages = np.array(cursor.fetchall())
+
+    # Extract voltage variations from spiprof view
+    spiprof_voltage_query = '''SELECT DISTINCT cell, vpwr FROM spiprof'''
+    cursor.execute(spiprof_voltage_query)
+    spiprof_voltages = np.array(cursor.fetchall())
+
+    variation_percentages = np.array([0.88, 0.92, 0.96, 1.00, 1.05, 1.10, 1.15])
+
+    for cell in nominal_voltages:
+        # Extract cell name and nominal value
+        cell_name = cell[0]
+        nominal_value = cell[1]
+
+        # Calculate expected voltage variations
+        voltage_variations = np.around(variation_percentages * float(nominal_value), decimals = 4)
+
+        # Find matching cell name from spiprof view and extract voltages
+        extracted_cell = spiprof_voltages[np.where(spiprof_voltages[:,0] == cell_name),:].squeeze(axis = 0)
+        extracted_voltages = extracted_cell[:,1].astype(float)
+
+        # Check if voltages match
+        if len(extracted_voltages) != 0:
+            for voltage in voltage_variations:
+                if voltage not in extracted_voltages:
+                    message = 'voltage {voltage} expected in cell {cell} but not found'.format(voltage = voltage, cell = cell_name)
+                    error(message)
 
 ################################################################################
 # .cdev Parsing
@@ -308,13 +366,13 @@ def parse_cdev_parameter(parameter_string, cell_name, pin_dict={}):
 # .pgarc Parsing
 ################################################################################
 
-def parse_pgarc():
+def parse_pgarc(filename, connection):
     '''
     Summary: splits up and extracts information (pin names) for each pgarc cell
     Returns: dictionary of all cells in format <cell name> : [<pin name>]
     '''
     # First, split up pgarc file into a list of text segments for each individual cell
-    with open(args.pgarc_filename,'r') as f:
+    with open(filename,'r') as f:
         data = f.read()
         cells = data.split('cell ')
         cells.pop(0) # First cell in split is empty, just delete it
@@ -332,7 +390,12 @@ def parse_pgarc():
         cell_name = cell_words[0]
         cell_pins = cell_words[1:]
         cell_dict[cell_name] = cell_pins
+        cursor = connection.cursor()
+        for pin in cell_pins:
+            query = "INSERT INTO pgarc VALUES (\"{cell}\", \"{pin}\")".format(cell = cell_name, pin = pin)
+            cursor.execute(query)
 
+    connection.commit()
     return cell_dict
 
 ################################################################################
@@ -537,7 +600,12 @@ if(os.path.isfile('redhawk.db')):
     for row in connection.execute('SELECT * FROM lib LIMIT 10'):
         print(row)
     count = len(connection.execute('SELECT * FROM lib').fetchall())
-    print('Number of lib entries:', count)
+    print('Number of lib entries:', count, '\n')
+
+    compare_cell_names(connection)
+    check_voltage_variations(connection)
+    compare_pin_names(connection)
+    output_errors("errors.log")
 else:
     # Initialize database
     connection = sqlite3.connect('redhawk.db')
@@ -552,6 +620,8 @@ else:
             parse_spiprof(file, connection)
         elif file.endswith('.lib'):
             insert_lib(file, connection)
+        elif file.endswith('.pgarc'):
+            parse_pgarc(file, connection)
     output_errors("errors.log")
 
 # Inserting into and querying from the tables

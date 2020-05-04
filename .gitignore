@@ -2,3 +2,6 @@
 *.spiprof
 *.pgarc
 *.db
+*.lib
+graphs/**
+errors.log
