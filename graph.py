@@ -100,6 +100,9 @@ def area_vpwr_vary_parameters(connection):
 if(os.path.isfile('redhawk.db')):
     connection = sqlite3.connect('redhawk.db')
 
+    if(os.path.isdir('graphs') == False):
+        os.mkdir('graphs')
+
     peak_vpwr_vary_state(connection)
     area_vpwr_vary_parameters(connection)
 else:
