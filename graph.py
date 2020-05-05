@@ -47,7 +47,7 @@ def peak_vpwr_vary_state(connection):
 
     plt.grid(True)
     plt.legend()
-    plt.title('Peak vs VPWR - Varying states\ndffnrq_1x: c2 = 1.0e-15 F, slew1 = 1.25e-11 S, slew = 7.5e-12 S')
+    plt.title('Peak vs VPWR - Varying states\ndffnrq_1x: c2 = 1.0e-15 F, slew1 = 1.25e-11 S, slew = 7.5e-12 S, PVT1')
     plt.xlabel('VPWR (V)')
     plt.ylabel('Peak (A)')
     plt.savefig('graphs/peak_vs_pwr.png')
@@ -99,7 +99,7 @@ def area_vpwr_vary_parameters(connection):
 
     plt.grid(True)
     plt.legend()
-    plt.title('Area vs VPWR - Varying parameters (c2, slew1, slew2)\ndffnrq_1x: state = output_fall, pin = VPWR')
+    plt.title('Area vs VPWR - Varying parameters (c2, slew1, slew2)\ndffnrq_1x: state = output_fall, pin = VPWR, PVT1')
     plt.xlabel('VPWR (V)')
     plt.ylabel('Area (C)')
     plt.savefig('graphs/area_vs_pwr.png')
