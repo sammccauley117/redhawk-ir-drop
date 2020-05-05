@@ -13,6 +13,7 @@ parser = argparse.ArgumentParser(description='''Runs an IR drop analysis compari
 parser.add_argument('input_file', help=''''Name of the file containing
     all the Redhawk views (.cdev, .pgarc, .spiprof, and .lib files)''')
 parser.add_argument('-e', '--errorfile', type=str, default='./error.log', help='Name of the output error file')
+parser.add_argument('-d', '--database', type=str, default='./redhawk.db', help='File path for the database')
 args = parser.parse_args()
 
 # Load the list of files
@@ -44,10 +45,6 @@ SPIPROF_UNITS = {
 error_set = set()
 
 ################################################################################
-# Helper functions
-################################################################################
-
-################################################################################
 # Database creation
 ################################################################################
 
@@ -58,7 +55,7 @@ def create_tables(connection):
     cursor.execute('''
     CREATE TABLE cdev
     (cell, temperature, state, vector, active_input, active_output,
-    vpwr, vgnd, pin, esc, esr, leak)
+    vpwr, vgnd, pin, esc, esr, leak, filename)
     ''')
 
     # Create spiprof table
@@ -77,7 +74,7 @@ def create_tables(connection):
     # Create liberty file table
     cursor.execute('''
     CREATE TABLE lib
-    (cell, area)
+    (cell, area, filename)
     ''')
 
     # Save changes
@@ -215,11 +212,11 @@ def insert_cdev(filename, connection):
         for parameters in parameters_variations.values():
             for pin, pin_data in parameters['pins'].items():
                 query = '''INSERT INTO cdev VALUES ("{cell}", {temperature}, "{state}", "{vector}", "{active_input}",
-                    "{active_output}", {vpwr}, {vgnd}, "{pin}", {esc}, {esr}, {leak})'''.format(cell=cell,
+                    "{active_output}", {vpwr}, {vgnd}, "{pin}", {esc}, {esr}, {leak}, "{filename}")'''.format(cell=cell,
                     temperature=parameters['Temperature'], state=parameters['State'], vector=parameters['vector'],
                     active_input=parameters['active_input'], active_output=parameters['active_output'],
                     vpwr=parameters['VPWR'], vgnd=parameters['VGND'], pin=pin, esc=pin_data['esc'], esr=pin_data['esr'],
-                    leak=pin_data['leak'])
+                    leak=pin_data['leak'], filename=filename)
                 cursor = connection.cursor()
                 cursor.execute(query)
 
@@ -582,7 +579,7 @@ def insert_lib(filename, connection):
                 break
 
         # Insert into database
-        query = 'INSERT INTO lib VALUES ("{cell}", {area})'.format(cell=name, area=area)
+        query = 'INSERT INTO lib VALUES ("{cell}", {area}, "{filename}")'.format(cell=name, area=area, filename=filename)
         cursor = connection.cursor()
         cursor.execute(query)
 
@@ -592,51 +589,45 @@ def insert_lib(filename, connection):
 # Main script
 ################################################################################
 
-# Check if db already exists before creating new one
-if(os.path.isfile('redhawk.db')):
-    connection = sqlite3.connect('redhawk.db')
-    print('cdev sample:')
-    for row in connection.execute('SELECT * FROM cdev LIMIT 10'):
-        print(row)
-    count = len(connection.execute('SELECT * FROM cdev').fetchall())
-    print('Number of cdev entries:', count)
+# Check if db already exists: if so, delete it to allow for a fresh one to be made
+if(os.path.isfile(args.database)):
+    os.remove(args.database)
 
-    print('\nspiprof sample:')
-    for row in connection.execute('SELECT * FROM spiprof LIMIT 10'):
-        print(row)
-    count = len(connection.execute('SELECT * FROM spiprof').fetchall())
-    print('Number of spiprof entries:', count)
+# Initialize database
+connection = sqlite3.connect(args.database)
+create_tables(connection)
 
-    print('\npgarc sample:')
-    for row in connection.execute('SELECT * FROM pgarc LIMIT 10'):
-        print(row)
-    count = len(connection.execute('SELECT * FROM pgarc').fetchall())
-    print('Number of pgarc entries:', count)
+# Insert the file data into the database
+for file in files:
+    print("Parsing: " + file, flush=True)
+    if file.endswith('.cdev'):
+        insert_cdev(file, connection)
+    elif file.endswith('.spiprof'):
+        parse_spiprof(file, connection)
+    elif file.endswith('.lib'):
+        insert_lib(file, connection)
+    elif file.endswith('.pgarc'):
+        parse_pgarc(file, connection)
 
-    print('\nlib sample:')
-    for row in connection.execute('SELECT * FROM lib LIMIT 10'):
-        print(row)
-    count = len(connection.execute('SELECT * FROM lib').fetchall())
-    print('Number of lib entries:', count, '\n')
+# Print sample data
+print('cdev sample:')
+for row in connection.execute('SELECT * FROM cdev LIMIT 10'):
+    print(row)
+print('\nspiprof sample:')
+for row in connection.execute('SELECT * FROM spiprof LIMIT 10'):
+    print(row)
+print('\npgarc sample:')
+for row in connection.execute('SELECT * FROM pgarc LIMIT 10'):
+    print(row)
+print('\nlib sample:')
+for row in connection.execute('SELECT * FROM lib LIMIT 10'):
+    print(row)
+print()
 
-    compare_cell_names(connection)
-    check_voltage_variations(connection)
-    compare_pin_names(connection)
-    output_errors(args.errorfile)
-else:
-    # Initialize database
-    connection = sqlite3.connect('redhawk.db')
-    create_tables(connection)
+# Run additional QA
+compare_cell_names(connection)
+check_voltage_variations(connection)
+compare_pin_names(connection)
 
-    # Insert the file data into the database
-    for file in files:
-        print("Parsing: " + file, flush=True)
-        if file.endswith('.cdev'):
-            insert_cdev(file, connection)
-        elif file.endswith('.spiprof'):
-            parse_spiprof(file, connection)
-        elif file.endswith('.lib'):
-            insert_lib(file, connection)
-        elif file.endswith('.pgarc'):
-            parse_pgarc(file, connection)
-    output_errors(args.errorfile)
+# Log errors
+output_errors(args.errorfile)
