@@ -14,6 +14,8 @@ parser.add_argument('input_file', help=''''Name of the file containing
     all the Redhawk views (.cdev, .pgarc, .spiprof, and .lib files)''')
 parser.add_argument('-e', '--errorfile', type=str, default='./error.log', help='Name of the output error file')
 parser.add_argument('-d', '--database', type=str, default='./redhawk.db', help='File path for the database')
+parser.add_argument('--is_verbose', default=False)
+parser.add_argument('--verbose', dest='is_verbose', action='store_true', help='Shows samples of each database')
 args = parser.parse_args()
 
 # Load the list of files
@@ -618,20 +620,21 @@ for file in files:
     elif file.endswith('.pgarc'):
         parse_pgarc(file, connection)
 
-# Print sample data
-print('cdev sample:')
-for row in connection.execute('SELECT * FROM cdev LIMIT 10'):
-    print(row)
-print('\nspiprof sample:')
-for row in connection.execute('SELECT * FROM spiprof LIMIT 10'):
-    print(row)
-print('\npgarc sample:')
-for row in connection.execute('SELECT * FROM pgarc LIMIT 10'):
-    print(row)
-print('\nlib sample:')
-for row in connection.execute('SELECT * FROM lib LIMIT 10'):
-    print(row)
-print()
+# Print sample data if verbose is turned on
+if args.is_verbose:
+    print('cdev sample:')
+    for row in connection.execute('SELECT * FROM cdev LIMIT 10'):
+        print(row)
+    print('\nspiprof sample:')
+    for row in connection.execute('SELECT * FROM spiprof LIMIT 10'):
+        print(row)
+    print('\npgarc sample:')
+    for row in connection.execute('SELECT * FROM pgarc LIMIT 10'):
+        print(row)
+    print('\nlib sample:')
+    for row in connection.execute('SELECT * FROM lib LIMIT 10'):
+        print(row)
+    print()
 
 # Run additional QA
 compare_cell_names(connection)
