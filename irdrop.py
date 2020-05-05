@@ -116,11 +116,11 @@ def compare_pin_names(connection):
     cursor.execute(pgarc_pin_names_query)
     pgarc_pin_names = np.array(cursor.fetchall())
 
-    cdev_pin_names_query = '''SELECT DISTINCT cell, pin FROM cdev'''
+    cdev_pin_names_query = '''SELECT DISTINCT cell, pin, filename FROM cdev'''
     cursor.execute(cdev_pin_names_query)
     cdev_pin_names = np.array(cursor.fetchall())
 
-    spiprof_pin_names_query = '''SELECT DISTINCT cell, pin FROM spiprof'''
+    spiprof_pin_names_query = '''SELECT DISTINCT cell, pin, filename FROM spiprof'''
     cursor.execute(spiprof_pin_names_query)
     spiprof_pin_names = np.array(cursor.fetchall())
 
@@ -132,44 +132,51 @@ def compare_pin_names(connection):
         # Extract pin names from views
         extracted_cdev_cell = cdev_pin_names[np.where(cdev_pin_names[:,0] == cell_name),:].squeeze(axis = 0)
         extracted_cdev_pins = extracted_cdev_cell[:,1]
+        extracted_cdev_file = extracted_cdev_cell[:,2]
         extracted_spiprof_cell = spiprof_pin_names[np.where(spiprof_pin_names[:,0] == cell_name),:].squeeze(axis = 0)
         extracted_spiprof_pins = extracted_spiprof_cell[:,1]
+        extracted_spiprof_file = extracted_spiprof_cell[:,2]
 
         if len(extracted_cdev_pins) != 0:
             if pin_name not in extracted_cdev_pins:
-                message = 'pin {pin} mismatch between pgarc and cdev for cell {cell}'.format(pin = pin_name, cell = cell_name)
+                message = 'File: {file}: Pin {pin} name mismatch between pgarc and cdev for cell {cell}'.format(file = extracted_cdev_file[0], pin = pin_name, cell = cell_name)
                 error(message)
 
         if len(extracted_spiprof_pins) != 0:
             if pin_name not in extracted_spiprof_pins:
-                message = 'pin {pin} mismatch between pgarc and spiprof for cell {cell}'.format(pin = pin_name, cell = cell_name)
+                message = 'File: {file}: Pin {pin} name mismatch between pgarc and spiprof for cell {cell}'.format(file = extracted_spiprof_file[0], pin = pin_name, cell = cell_name)
                 error(message)
 
 def compare_cell_names(connection):
-    # Query cdev and spiprof cells that aren't in pgarc
-    cdev_query = '''SELECT cell FROM pgarc WHERE cell NOT IN (SELECT cell FROM cdev)'''
-    spiprof_query = '''SELECT cell FROM pgarc WHERE cell NOT IN (SELECT cell from spiprof)'''
-
     cursor = connection.cursor()
 
-    for cell in cursor.execute(cdev_query):
-        message = 'cell {} in pgarc but not in cdev'.format(str(cell).replace('(\'','').replace('\',)',''))
+    # Query cdev and spiprof cells that aren't in pgarc
+    cdev_query = '''SELECT cell FROM pgarc WHERE cell NOT IN (SELECT cell FROM cdev)'''
+    cursor.execute(cdev_query)
+    cdev_cell_names = np.array(cursor.fetchall())
+
+    spiprof_query = '''SELECT cell FROM pgarc WHERE cell NOT IN (SELECT cell from spiprof)'''
+    cursor.execute(spiprof_query)
+    spiprof_cell_names = np.array(cursor.fetchall())
+
+    for cell in cdev_cell_names:
+        message = 'Cell {cell} in pgarc but not in cdev'.format(cell = cell[0])
         error(message)
 
-    for cell in cursor.execute(spiprof_query):
-        message = 'cell {} in pgarc but not in spiprof'.format(str(cell).replace('(\'','').replace('\',)',''))
+    for cell in spiprof_cell_names:
+        message = 'Cell {cell} in pgarc but not in spiprof'.format(cell = cell[0])
         error(message)
 
 def check_voltage_variations(connection):
     cursor = connection.cursor()
 
     # Extract nominal voltage from cdev view
-    nominal_voltage_query = '''SELECT DISTINCT cell, vpwr FROM cdev'''
+    nominal_voltage_query = '''SELECT DISTINCT cell, vpwr, filename FROM cdev'''
     cursor.execute(nominal_voltage_query)
     nominal_voltages = np.array(cursor.fetchall())
 
     # Extract voltage variations from spiprof view
-    spiprof_voltage_query = '''SELECT DISTINCT cell, vpwr FROM spiprof'''
+    spiprof_voltage_query = '''SELECT DISTINCT cell, vpwr, filename FROM spiprof'''
     cursor.execute(spiprof_voltage_query)
     spiprof_voltages = np.array(cursor.fetchall())
 
@@ -179,6 +186,7 @@ def check_voltage_variations(connection):
         # Extract cell name and nominal value
         cell_name = cell[0]
         nominal_value = cell[1]
+        file_name = cell[2]
 
         # Calculate expected voltage variations
         voltage_variations = np.around(variation_percentages * float(nominal_value), decimals = 4)
@@ -191,7 +199,7 @@ def check_voltage_variations(connection):
         if len(extracted_voltages) != 0:
             for voltage in voltage_variations:
                 if voltage not in extracted_voltages:
-                    message = 'voltage {voltage} expected in cell {cell} but not found'.format(voltage = voltage, cell = cell_name)
+                    message = 'File: {file}: Voltage {voltage} expected in cell {cell} but not found'.format(file = file_name, voltage = voltage, cell = cell_name)
                     error(message)
 
 ################################################################################
@@ -590,7 +598,7 @@ def insert_lib(filename, connection):
 # Main script
 ################################################################################
 
-# Check if db already exists: if so, delete it to allow for a fresh one to be made
+# # Check if db already exists: if so, delete it to allow for a fresh one to be made
 if(os.path.isfile(args.database)):
     os.remove(args.database)
 

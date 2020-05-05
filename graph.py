@@ -1,14 +1,21 @@
 #!/usr/bin/python3
 
+import argparse
 import sqlite3
 import os.path
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Set up and parse command line arguments
+parser = argparse.ArgumentParser(description='''Plot IR drop analysis comparing
+    the values of .cdev, .spiprof, and .pgarc files''')
+parser.add_argument('-d', '--database', type=str, default='./redhawk.db', help='File path for the database')
+args = parser.parse_args()
+
 def peak_vpwr_vary_state(connection):
     cursor = connection.cursor()
 
-    # Query State, VPWR, and Peak Current for only the first 7 sections of dffnrq_1x cell
+    # Query State, VPWR, and Peak Current for only the first 7 PVT1 sections of dffnrq_1x cell
     data_query = '''SELECT DISTINCT state, vpwr, peak
     FROM spiprof
     WHERE cell = 'dffnrq_1x'
@@ -18,6 +25,7 @@ def peak_vpwr_vary_state(connection):
     AND c2 = 1.0e-15
     AND slew1 = 1.25e-11
     AND slew2 = 7.5e-12
+    AND filename LIKE '%PVT1%'
     ORDER BY vpwr
     '''
     cursor.execute(data_query)
@@ -48,12 +56,13 @@ def peak_vpwr_vary_state(connection):
 def area_vpwr_vary_parameters(connection):
     cursor = connection.cursor()
 
-    # Query c2, slew1, slew2, vpwr, and area for dffnrq_1x cell
+    # Query c2, slew1, slew2, vpwr, and area for dffnrq_1x cell under PVT1 conditions
     data_query = '''SELECT DISTINCT c2, slew1, slew2, vpwr, area
     FROM spiprof
     WHERE cell = 'dffnrq_1x'
     AND pin = 'VPWR'
     AND state = 'output_fall'
+    AND filename LIKE '%PVT1%'
     ORDER BY vpwr'''
     cursor.execute(data_query)
     db_data = np.array(cursor.fetchall())
@@ -97,8 +106,8 @@ def area_vpwr_vary_parameters(connection):
     # plt.show()
 
 # Check if database exists already
-if(os.path.isfile('redhawk.db')):
-    connection = sqlite3.connect('redhawk.db')
+if(os.path.isfile(args.database)):
+    connection = sqlite3.connect(args.database)
 
     if(os.path.isdir('graphs') == False):
         os.mkdir('graphs')
@@ -107,4 +116,4 @@ if(os.path.isfile('redhawk.db')):
     area_vpwr_vary_parameters(connection)
 else:
     # If not, print an error
-    print('ERROR: redhawk.db not found')
+    print('ERROR: {} not found'.format(args.database))
