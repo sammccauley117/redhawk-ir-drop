@@ -33,14 +33,15 @@ def peak_vpwr_vary_state(connection):
 
     # Query states from spiprof
     state_query = '''SELECT DISTINCT state
-    FROM spiprof'''
+    FROM spiprof
+    ORDER BY state'''
     cursor.execute(state_query)
     db_states = np.array(cursor.fetchall())
 
     # Extract VPWR and Peak Current for each state
     extracted_data = db_data[:, [1, 2]].astype(float)
 
-    plt.figure(figsize = (10, 10))
+    plt.figure(figsize = (12, 7))
     for row in db_states:
         series = extracted_data[db_data[:,0] == row, :]
         plt.plot(series[:,0], series[:,1], label = ''.join(row))
@@ -90,7 +91,7 @@ def area_vpwr_vary_parameters(connection):
     series5 = extracted_data[(db_data[:,0] == 5e-15) & (db_data[:,1] == 3.8085e-11) & (db_data[:,2] == 2.2851e-11), :]
 
     # Plot the data
-    plt.figure(figsize = (10, 10))
+    plt.figure(figsize = (12, 7))
     plt.plot(series1[:,0], series1[:,1], label = 'c2 = 1e-15 F, slew1 = 1.25e-11 F, slew2 = 7.5e-12 F')
     plt.plot(series2[:,0], series2[:,1], label = 'c2 = 5e-15 F, slew1 = 1.25e-11 F, slew2 = 7.5e-12 F')
     plt.plot(series3[:,0], series3[:,1], label = 'c2 = 1e-14 F, slew1 = 1.25e-11 F, slew2 = 7.5e-12 F')
