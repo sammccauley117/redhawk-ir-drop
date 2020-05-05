@@ -42,7 +42,7 @@ SPIPROF_UNITS = {
     'width': 'S'
 }
 
-error_set = set()
+error_list = []
 
 ################################################################################
 # Database creation
@@ -62,7 +62,7 @@ def create_tables(connection):
     cursor.execute('''
     CREATE TABLE spiprof
     (cell, vpwr, c1, r, c2, slew1, slew2, state, vector, active_input, active_output,
-    pin, peak, area, width)
+    pin, peak, area, width, filename)
     ''')
 
     # Create pgarc table
@@ -90,8 +90,9 @@ def error(message):
     Input:
         message: string of the error message
     '''
-    if message not in error_set:
-        error_set.add('ERROR: ' + message)
+    new_error = 'ERROR: ' + message
+    if new_error not in error_list:
+        error_list.append(new_error)
 
 def output_errors(filename):
     '''
@@ -99,12 +100,12 @@ def output_errors(filename):
     Input:
         filename: path of the error file
     '''
-    if (len(error_set) == 0):
+    if (len(error_list) == 0):
         print('No errors found.')
     else:
         print('Errors found. Please refer to ' + filename)
         with open(filename, 'w') as error_file:
-            for error in error_set:
+            for error in error_list:
                 error_file.write(error + '\n')
 
 def compare_pin_names(connection):
@@ -410,13 +411,13 @@ def parse_pgarc(filename, connection):
 # .spiprof Parsing
 ################################################################################
 
-def parse_spiprof(file, connection):
+def parse_spiprof(filename, connection):
     '''
     Summary: splits up and extracts information for each spiprof cell
     Returns: dictionary of all cells in format <cell name> : [<pin name>]
     '''
     # First, split up pgarc file into a list of text segments for each individual cell
-    with open(file,'r') as f:
+    with open(filename,'r') as f:
         data = f.read()
         spiprof_cells = data.split('cell: ')
         del data
@@ -424,10 +425,10 @@ def parse_spiprof(file, connection):
 
     spiprof_cell_dict = {} # Result dictionary
     for spiprof_cell in spiprof_cells:
-        parse_spiprof_cell(spiprof_cell, connection)
+        parse_spiprof_cell(spiprof_cell, connection, filename)
         connection.commit()
 
-def parse_spiprof_cell(cell, connection):
+def parse_spiprof_cell(cell, connection, filename):
     '''
     Summary: splits up a spiprof cell into subcells, each subcell consisting of one set of parameters, voltage, and data
     Calls helper functions that will add to the redhawk db
@@ -446,7 +447,7 @@ def parse_spiprof_cell(cell, connection):
             spiprof_parameters_group, spiprof_voltage_parameter = parse_spiprof_parameters(spiprof_cell_name, spiprof_sub_cell_divide[0])
 
             # Because there are mutiple entries with the same parameter hash, only create a new dictionary if one does not exist
-            parse_spiprof_sub_cell(spiprof_cell_name, spiprof_voltage_parameter, spiprof_parameters_group, spiprof_sub_cell_divide[1], connection)
+            parse_spiprof_sub_cell(spiprof_cell_name, spiprof_voltage_parameter, spiprof_parameters_group, spiprof_sub_cell_divide[1], connection, filename)
 
 
 def parse_spiprof_parameters(cell_name, parameters):
@@ -483,7 +484,7 @@ def parse_spiprof_parameters(cell_name, parameters):
 
     return spiprof_parameters_dict, spiprof_voltage_parameter
 
-def parse_spiprof_sub_cell(cell_name, voltage_parameter, cell_parameters, sub_cell, connection):
+def parse_spiprof_sub_cell(cell_name, voltage_parameter, cell_parameters, sub_cell, connection, filename):
     '''
     Summary: parses subcell data. Gets secondary parameters, data label names, and data
     Checks if sequential cells have 4 states, and that combinational cells have 2 states. Uses name of cell.
@@ -495,10 +496,10 @@ def parse_spiprof_sub_cell(cell_name, voltage_parameter, cell_parameters, sub_ce
 
     if (cell_name.startswith('dff') or cell_name.startswith('sdff') or cell_name.startswith('latch')):
         if (len(spiprof_data_group_list) != 4):
-            error("Cell " + cell_name + " is probably sequential, so it should have 4 states. Instead, it has " + str(len(spiprof_data_group_list)) + " states.")
+            error("File: " + filename + ": Cell " + cell_name + " is probably sequential, so it should have 4 states. Instead, it has " + str(len(spiprof_data_group_list)) + " states.")
     else:
         if (len(spiprof_data_group_list) != 2):
-            error("Cell " + cell_name + " is probably combinational, so it should have 2 states. Instead, it has " + str(len(spiprof_data_group_list)) + " states.")
+            error("File: " + filename + ": Cell " + cell_name + " is probably combinational, so it should have 2 states. Instead, it has " + str(len(spiprof_data_group_list)) + " states.")
 
     for data_group in spiprof_data_group_list:
         spiprof_data_dict = {}
@@ -539,7 +540,7 @@ def parse_spiprof_sub_cell(cell_name, voltage_parameter, cell_parameters, sub_ce
                         error("Cell " + cell_name + " has incorrect " + spiprof_data_label + " units. Expected \"" + SPIPROF_UNITS[spiprof_data_label] + "\" but found \"" + data_unit + "\".")
                     label_index = label_index + 1
                 spiprof_data_dict[spiprof_pin_name] = spiprof_pin_data_dict
-                query = "INSERT INTO spiprof VALUES (\"{cell}\", {vpwr}, {c1}, {r}, {c2}, {slew1}, {slew2}, \"{state}\", \"{vector}\", \"{active_input}\", \"{active_output}\", \"{pin}\", {peak}, {area}, {width})".format(cell=cell_name, vpwr=voltage_parameter[1], c1=cell_parameters["C1"], r=cell_parameters["R"], c2=cell_parameters["C2"], slew1=cell_parameters["Slew1"], slew2=cell_parameters["Slew2"], state=spiprof_data_parameters_dict['state'], vector=spiprof_data_parameters_dict['vector'], active_input=spiprof_data_parameters_dict['active_input'], active_output=spiprof_data_parameters_dict['active_output'], pin=spiprof_pin_name, peak=spiprof_pin_data_dict['peak'], area=spiprof_pin_data_dict['area'], width=spiprof_pin_data_dict['width'])
+                query = "INSERT INTO spiprof VALUES (\"{cell}\", {vpwr}, {c1}, {r}, {c2}, {slew1}, {slew2}, \"{state}\", \"{vector}\", \"{active_input}\", \"{active_output}\", \"{pin}\", {peak}, {area}, {width}, \"{file}\")".format(cell=cell_name, vpwr=voltage_parameter[1], c1=cell_parameters["C1"], r=cell_parameters["R"], c2=cell_parameters["C2"], slew1=cell_parameters["Slew1"], slew2=cell_parameters["Slew2"], state=spiprof_data_parameters_dict['state'], vector=spiprof_data_parameters_dict['vector'], active_input=spiprof_data_parameters_dict['active_input'], active_output=spiprof_data_parameters_dict['active_output'], pin=spiprof_pin_name, peak=spiprof_pin_data_dict['peak'], area=spiprof_pin_data_dict['area'], width=spiprof_pin_data_dict['width'], file=filename)
                 #print(query)
                 cursor = connection.cursor()
                 cursor.execute(query)
