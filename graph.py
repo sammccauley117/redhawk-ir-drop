@@ -39,9 +39,10 @@ def peak_vpwr_vary_state(connection):
     db_states = np.array(cursor.fetchall())
 
     # Extract VPWR and Peak Current for each state
-    extracted_data = db_data[:, [1, 2]].astype(float)
+    extracted_data = np.absolute(db_data[:, [1, 2]].astype(float))
 
     plt.figure(figsize = (12, 7))
+    # Plot every state
     for row in db_states:
         series = extracted_data[db_data[:,0] == row, :]
         plt.plot(series[:,0], series[:,1], label = ''.join(row))
@@ -79,10 +80,13 @@ def area_vpwr_vary_parameters(connection):
     cursor.execute(parameter_query)
     db_parameters = np.array(cursor.fetchall())
 
+    plt.figure(figsize = (12, 7))
+    # Uncomment the following to plot every combination of c2, slew1, slew2
     # for row in db_parameters:
     #     series = extracted_data[(db_data[:,0] == row[0]) & (db_data[:,1] == row[1]) & (db_data[:,2] == row[2]), :]
     #     plt.plot(series[:,0], series[:,1], label = 'c2 = {} F, slew1 = {} S, slew2 = {} S'.format(row[0], row[1], row[2]))
 
+    # Hardcoded examples of different combinations of parameters
     # Extract VPWR and area for several parameter variation
     series1 = extracted_data[(db_data[:,0] == 1e-15) & (db_data[:,1] == 1.25e-11) & (db_data[:,2] == 7.5e-12), :]
     series2 = extracted_data[(db_data[:,0] == 5e-15) & (db_data[:,1] == 1.25e-11) & (db_data[:,2] == 7.5e-12), :]
@@ -90,13 +94,14 @@ def area_vpwr_vary_parameters(connection):
     series4 = extracted_data[(db_data[:,0] == 1e-15) & (db_data[:,1] == 3.8085e-11) & (db_data[:,2] == 2.2851e-11), :]
     series5 = extracted_data[(db_data[:,0] == 5e-15) & (db_data[:,1] == 3.8085e-11) & (db_data[:,2] == 2.2851e-11), :]
 
+    # For the future: manually check these input capacitances vs capacitances listed in .lib file
+
     # Plot the data
-    plt.figure(figsize = (12, 7))
-    plt.plot(series1[:,0], series1[:,1], label = 'c2 = 1e-15 F, slew1 = 1.25e-11 F, slew2 = 7.5e-12 F')
-    plt.plot(series2[:,0], series2[:,1], label = 'c2 = 5e-15 F, slew1 = 1.25e-11 F, slew2 = 7.5e-12 F')
-    plt.plot(series3[:,0], series3[:,1], label = 'c2 = 1e-14 F, slew1 = 1.25e-11 F, slew2 = 7.5e-12 F')
-    plt.plot(series4[:,0], series4[:,1], label = 'c2 = 1e-15 F, slew1 = 3.8085e-11 F, slew2 = 2.2851e-11 F')
-    plt.plot(series5[:,0], series5[:,1], label = 'c2 = 5e-15 F, slew1 = 3.8085e-11 F, slew2 = 2.2851e-11 F')
+    plt.plot(series1[:,0], series1[:,1], label = 'c2 = 1e-15 F, slew1 = 1.25e-11 S, slew2 = 7.5e-12 S')
+    plt.plot(series2[:,0], series2[:,1], label = 'c2 = 5e-15 F, slew1 = 1.25e-11 S, slew2 = 7.5e-12 S')
+    plt.plot(series3[:,0], series3[:,1], label = 'c2 = 1e-14 F, slew1 = 1.25e-11 S, slew2 = 7.5e-12 S')
+    plt.plot(series4[:,0], series4[:,1], label = 'c2 = 1e-15 F, slew1 = 3.8085e-11 S, slew2 = 2.2851e-11 S')
+    plt.plot(series5[:,0], series5[:,1], label = 'c2 = 5e-15 F, slew1 = 3.8085e-11 S, slew2 = 2.2851e-11 S')
 
     plt.grid(True)
     plt.legend()
