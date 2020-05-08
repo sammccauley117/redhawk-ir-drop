@@ -44,6 +44,12 @@ SPIPROF_UNITS = {
     'width': 'S'
 }
 
+SEQUENTIAL_CELL_NAME_COMPONENTS = [
+    "dff",
+    "sdff",
+    "latch",
+]
+
 error_list = []
 
 ################################################################################
@@ -504,7 +510,11 @@ def parse_spiprof_sub_cell(cell_name, voltage_parameter, cell_parameters, sub_ce
     spiprof_data_group_list = sub_cell.split('      state = ')
     spiprof_data_group_list.pop(0)
 
-    if (cell_name.startswith('dff') or cell_name.startswith('sdff') or cell_name.startswith('latch')):
+    isSequential = False
+    for (name_component in SEQUENTIAL_CELL_NAME_COMPONENTS):
+        if name_component in cell_name:
+            isSequential = True
+    if (isSequential):
         if (len(spiprof_data_group_list) != 4):
             error("File: " + filename + ": Cell " + cell_name + " is probably sequential, so it should have 4 states. Instead, it has " + str(len(spiprof_data_group_list)) + " states.")
     else:
